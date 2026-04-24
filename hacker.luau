@@ -1,33 +1,5 @@
 -- SolaraHackerTool
 
--- ============================================================
--- TYPES
--- ============================================================
-
-type Options = {
-    FilePath: string,
-    SafeMode: boolean,
-    IgnoreDefaultProps: boolean,
-    SaveBytecode: boolean,
-    DecompileTimeout: number,
-    SavePlayers: boolean,
-    IsolatePlayers: boolean,
-    AlternativeWritefile: boolean,
-    IgnoreDefaultPlayerScripts: boolean,
-    UseSharedStrings: boolean,
-    TreatUnionsAsParts: boolean,
-    NilInstances: boolean,
-    IgnoreNotArchivable: boolean,
-    Mode: string,
-    Object: Instance,
-    ExtraInstances: {Instance},
-    IsModel: boolean,
-}
-
--- ============================================================
--- OPTIONS PAR DÉFAUT
--- ============================================================
-
 local DEFAULT_OPTIONS = {
     FilePath = "game",
     SafeMode = false,
@@ -71,10 +43,6 @@ local function mergeOptions(user: {[string]: any}?): typeof(DEFAULT_OPTIONS)
     return opts
 end
 
--- ============================================================
--- DÉTECTION DES API DISPONIBLES (Solara)
--- ============================================================
-
 local HAS_GETHIDDENPROPERTY = false
 local HAS_DECOMPILE = false
 local HAS_GETBYTECODE = false
@@ -106,12 +74,6 @@ do
         tostring(HAS_GETHIDDENPROPERTY), tostring(HAS_DECOMPILE), tostring(HAS_GETBYTECODE)
     ))
 end
-
--- ============================================================
--- BASE64
--- ============================================================
-
-local B64_CHARS = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/"
 
 local function encodeBase64(s: string): string
     local result = {}
@@ -146,20 +108,9 @@ local function encodeBase64(s: string): string
     return table.concat(result)
 end
 
--- ============================================================
--- ESCAPE XML
--- ============================================================
-
 local function escapeXml(s: string): string
     return (s:gsub("&", "&amp;"):gsub("<", "&lt;"):gsub(">", "&gt;"):gsub('"', "&quot;"))
 end
-
--- ============================================================
--- CHARGEMENT API DUMP ROBLOX
--- ============================================================
-
-local ClassProperties: {[string]: {[string]: string}} = {}
-local ClassInheritance: {[string]: string} = {}
 
 local function loadApiDump()
     local ok, raw = pcall(function()
@@ -224,7 +175,6 @@ local function loadApiDump()
     print("[SSI] API Dump chargé : " .. count .. " classes")
 end
 
--- Récupère toutes les propriétés d'une classe (héritage inclus)
 local function getAllProps(className: string): {[string]: string}
     local result: {[string]: string} = {}
     local current: string? = className
@@ -240,14 +190,9 @@ local function getAllProps(className: string): {[string]: string}
     return result
 end
 
--- ============================================================
--- REFERENTS (IDs uniques)
--- ============================================================
-
-local referentMap: {[Instance]: string} = {}
-local referentCounter = 0
-
 local function getReferent(inst: Instance): string
+    local referentMap = {}
+    local referentCounter = 0
     if not referentMap[inst] then
         referentCounter += 1
         referentMap[inst] = string.format("RBX%08X", referentCounter)
@@ -255,14 +200,9 @@ local function getReferent(inst: Instance): string
     return referentMap[inst]
 end
 
--- ============================================================
--- SHARED STRINGS
--- ============================================================
-
-local sharedStringsMap: {[string]: string} = {}
-local sharedStringsIdx = 0
-
 local function getSharedKey(base64: string): string
+    local sharedStringsMap = {}
+    local sharedStringsIdx = 0
     if not sharedStringsMap[base64] then
         sharedStringsIdx += 1
         sharedStringsMap[base64] = string.format("%032d", sharedStringsIdx)
@@ -270,33 +210,12 @@ local function getSharedKey(base64: string): string
     return sharedStringsMap[base64]
 end
 
--- ============================================================
--- SÉRIALISEURS PAR TYPE
--- ============================================================
-
-type Serializer = (name: string, value: any) -> string
-
-local SER: {[string]: Serializer} = {}
-
-SER["string"] = function(n, v)
-    return string.format('<string name="%s"><![CDATA[%s]]></string>', n, tostring(v))
-end
-SER["String"] = SER["string"]
-
--- Additional Serializers can be added here
-
--- ============================================================
--- DÉCOMPILATION
--- ============================================================
-
 local function decompileScript(inst: Instance, opts: typeof(DEFAULT_OPTIONS)): string
-    -- 1. Lecture directe du Source (fonctionne si c'est ton jeu)
     local ok, src = pcall(function() return (inst :: any).Source end)
     if ok and type(src) == "string" and #src > 0 then
         return src
     end
 
-    -- 2. decompile() Solara avec timeout
     if HAS_DECOMPILE then
         local result = "-- Decompile timed out"
         local done = false
@@ -312,7 +231,6 @@ local function decompileScript(inst: Instance, opts: typeof(DEFAULT_OPTIONS)): s
         return result
     end
 
-    -- 3. Bytecode brut
     if HAS_GETBYTECODE and opts.SaveBytecode then
         local ok3, bc = pcall(getscriptbytecode :: any, inst)
         if ok3 and type(bc) == "string" and #bc > 0 then
@@ -323,10 +241,6 @@ local function decompileScript(inst: Instance, opts: typeof(DEFAULT_OPTIONS)): s
     return "-- Source unavailable"
 end
 
--- ============================================================
--- LECTURE DE PROPRIÉTÉ
--- ============================================================
-
 local function readProp(inst: Instance, propName: string): (boolean, any)
     if HAS_GETHIDDENPROPERTY then
         local ok, val = pcall(gethiddenproperty :: any, inst, propName)
@@ -335,16 +249,7 @@ local function readProp(inst: Instance, propName: string): (boolean, any)
     return pcall(function() return (inst :: any)[propName] end)
 end
 
--- ============================================================
--- SÉRIALISATION D'UNE INSTANCE
--- ============================================================
-
-local SCRIPT_CLASSES: {[string]: boolean} = {
-    Script = true, LocalScript = true, ModuleScript = true,
-}
-
 local function serializeInstance(inst: Instance, buf: {string}, opts: typeof(DEFAULT_OPTIONS))
-    -- Filtres
     if opts.IgnoreNotArchivable and not inst.Archivable then return end
 
     if not opts.SavePlayers then
@@ -366,16 +271,13 @@ local function serializeInstance(inst: Instance, buf: {string}, opts: typeof(DEF
     table.insert(buf, string.format('<Item class="%s" referent="%s">', className, referent))
     table.insert(buf, '<Properties>')
 
-    -- Name (toujours en premier)
     table.insert(buf, string.format('<string name="Name"><![CDATA[%s]]></string>', escapeXml(inst.Name)))
 
-    -- Toutes les propriétés de la classe
     local props = getAllProps(className)
 
     for propName, valueType in pairs(props) do
         if propName == "Name" then continue end
 
-        -- Source des scripts : traitement spécial
         if propName == "Source" and SCRIPT_CLASSES[className] then
             local source = decompileScript(inst, opts)
             table.insert(buf, string.format(
@@ -388,7 +290,6 @@ local function serializeInstance(inst: Instance, buf: {string}, opts: typeof(DEF
         local ok, value = readProp(inst, propName)
         if not ok or value == nil then continue end
 
-        -- Skip valeurs par défaut évidentes
         if opts.IgnoreDefaultProps then
             if value == false and valueType == "bool" then continue end
             if value == "" and (valueType == "string" or valueType == "String") then continue end
@@ -397,22 +298,18 @@ local function serializeInstance(inst: Instance, buf: {string}, opts: typeof(DEF
 
         local line: string?
 
-        -- Référence Instance
         if typeof(value) == "Instance" then
             line = string.format('<Ref name="%s">%s</Ref>', propName, getReferent(value))
 
-        -- SharedString (BinaryString dédupliqué)
         elseif valueType == "BinaryString" and opts.UseSharedStrings then
             local encoded = encodeBase64(tostring(value))
             local key = getSharedKey(encoded)
             line = string.format('<SharedString name="%s">%s</SharedString>', propName, key)
 
-        -- Sérialiseur standard
         elseif SER[valueType] then
             local ok2, result = pcall(SER[valueType], propName, value)
             if ok2 then line = result end
 
-        -- Fallback générique
         else
             local ok3, str = pcall(tostring, value)
             if ok3 then
@@ -427,7 +324,6 @@ local function serializeInstance(inst: Instance, buf: {string}, opts: typeof(DEF
 
     table.insert(buf, '</Properties>')
 
-    -- Enfants
     local ok, children = pcall(function() return inst:GetChildren() end)
     if ok then
         for _, child in ipairs(children) do
@@ -437,10 +333,6 @@ local function serializeInstance(inst: Instance, buf: {string}, opts: typeof(DEF
 
     table.insert(buf, '</Item>')
 end
-
--- ============================================================
--- CONSTRUCTION XML
--- ============================================================
 
 local function buildXml(opts: typeof(DEFAULT_OPTIONS)): string
     local buf: {string} = {}
@@ -453,7 +345,6 @@ local function buildXml(opts: typeof(DEFAULT_OPTIONS)): string
     table.insert(buf, '<External></External>')
     table.insert(buf, '<External>null</External>')
 
-    -- Sélection des racines selon le Mode
     local roots: {Instance} = {}
 
     if opts.Mode == "Optimized" then
@@ -468,7 +359,6 @@ local function buildXml(opts: typeof(DEFAULT_OPTIONS)): string
             if ok and s then table.insert(roots, s) end
         end
     else
-        -- Default / Full : game entier
         table.insert(roots, opts.Object)
     end
 
@@ -491,7 +381,6 @@ local function buildXml(opts: typeof(DEFAULT_OPTIONS)): string
         end
     end
 
-    -- SharedStrings
     if opts.UseSharedStrings and next(sharedStringsMap) then
         table.insert(buf, '<SharedStrings>')
         for base64, key in pairs(sharedStringsMap) do
@@ -504,10 +393,6 @@ local function buildXml(opts: typeof(DEFAULT_OPTIONS)): string
 
     return table.concat(buf, "\n")
 end
-
--- ============================================================
--- ÉCRITURE FICHIER
--- ============================================================
 
 local function writeFile(path: string, content: string, useSegments: boolean)
     if not HAS_WRITEFILE then
@@ -533,18 +418,12 @@ local function writeFile(path: string, content: string, useSegments: boolean)
         path, #content, #content / 1_000_000))
 end
 
--- ============================================================
--- POINT D'ENTRÉE PUBLIC
--- ============================================================
-
 local function synsaveinstance(param1: any, param2: any?)
-    -- Reset état global
-    referentMap = {}
-    referentCounter = 0
-    sharedStringsMap = {}
-    sharedStringsIdx = 0
+    local referentMap = {}
+    local referentCounter = 0
+    local sharedStringsMap = {}
+    local sharedStringsIdx = 0
 
-    -- Parse les arguments (multi-signatures)
     local userOpts: {[string]: any} = {}
 
     if typeof(param1) == "Instance" then
@@ -584,10 +463,6 @@ local function synsaveinstance(param1: any, param2: any?)
     writeFile(opts.FilePath, xml, opts.AlternativeWritefile)
 end
 
--- ============================================================
--- MODIFICATIONS POUR LE HACKING
--- ============================================================
-
 local function getRemoteEventsAndFunctions()
     local remoteObjects = {}
     for _, service in pairs(game:GetService("ReplicatedStorage"):GetChildren()) do
@@ -613,10 +488,6 @@ local function accessPlayerData()
     end
     return playerInfo
 end
-
--- ============================================================
--- GUI POUR AFFICHER LES INFOS
--- ============================================================
 
 local function createHackerGui()
     local screenGui = Instance.new("ScreenGui")
@@ -658,10 +529,6 @@ local function updateGuiInfo(infoLabel: TextLabel, newInfo: string)
     infoLabel.Text = newInfo
 end
 
--- ============================================================
--- PUBLIC API POUR L'HACKING
--- ============================================================
-
 local hackerTool = {}
 
 function hackerTool.startHacking()
@@ -677,7 +544,6 @@ function hackerTool.startHacking()
 
     infoText = infoText .. "\nPlayers:\n" .. playerData
 
-    -- Create GUI and update it with collected data
     local screenGui, infoLabel = createHackerGui()
     updateGuiInfo(infoLabel, infoText)
 
